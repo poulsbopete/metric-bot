@@ -31,12 +31,7 @@ cd metric-bot
 npm install
 ```
 
-3. Set up environment variables:
-```bash
-cp .env.example .env.local
-```
-
-Edit `.env.local` with your MCP endpoint, API key, and optional prompt URL:
+3. Create `.env.local` with your MCP endpoint, API key, and optional prompt URL:
 ```
 MCP_ENDPOINT=https://ai-assistants-ffcafb.kb.us-east-1.aws.elastic.cloud/api/agent_builder/mcp
 MCP_API_KEY=your-api-key-here
@@ -79,7 +74,6 @@ metric-bot/
 │   └── page.tsx              # Main page
 ├── components/
 │   └── ChatInterface.tsx     # Chat UI component
-├── .env.example              # Example environment variables
 ├── next.config.js            # Next.js configuration
 ├── package.json              # Dependencies
 ├── tailwind.config.ts        # Tailwind CSS configuration
