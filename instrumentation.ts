@@ -3,18 +3,19 @@ export async function register() {
   if (process.env.OTEL_SDK_DISABLED === "true") return;
 
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim();
-  if (!endpoint) {
-    console.warn("[OTel] OTEL_EXPORTER_OTLP_ENDPOINT not set — skipping.");
-    return;
-  }
+  const apiKey =
+    process.env.OTEL_API_KEY?.trim() ||
+    process.env.ELASTIC_OTLP_API_KEY?.trim();
 
-  const authHeaders = parseAuthHeaders();
-  if (!authHeaders.Authorization) {
-    console.warn("[OTel] Set OTEL_EXPORTER_OTLP_HEADERS or OTEL_API_KEY — skipping.");
+  if (!endpoint || !apiKey) {
+    console.warn(
+      "[OTel] Missing OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_API_KEY — skipping.",
+    );
     return;
   }
 
   const base = endpoint.replace(/\/$/, "");
+  const authHeaders = { Authorization: `ApiKey ${apiKey}` };
   const serviceName = process.env.OTEL_SERVICE_NAME || "vercel-app";
   const deploymentEnv =
     process.env.OTEL_DEPLOYMENT_ENVIRONMENT ||
@@ -31,29 +32,30 @@ export async function register() {
   const { OTLPLogExporter } = await import(
     "@opentelemetry/exporter-logs-otlp-http"
   );
-  const { resourceFromAttributes } = await import("@opentelemetry/resources");
+  const { Resource } = await import("@opentelemetry/resources");
   const {
-    ATTR_SERVICE_NAME,
-    ATTR_SERVICE_VERSION,
-    ATTR_DEPLOYMENT_ENVIRONMENT_NAME,
+    SEMRESATTRS_SERVICE_NAME,
+    SEMRESATTRS_SERVICE_VERSION,
+    SEMRESATTRS_DEPLOYMENT_ENVIRONMENT,
   } = await import("@opentelemetry/semantic-conventions");
   const { getNodeAutoInstrumentations } = await import(
     "@opentelemetry/auto-instrumentations-node"
   );
-  const { PeriodicExportingMetricReader } = await import(
+  const { MeterProvider, PeriodicExportingMetricReader } = await import(
     "@opentelemetry/sdk-metrics"
   );
   const { LoggerProvider, SimpleLogRecordProcessor } = await import(
     "@opentelemetry/sdk-logs"
   );
-  const { SimpleSpanProcessor } = await import("@opentelemetry/sdk-trace-base");
+  const { SimpleSpanProcessor } = await import("@opentelemetry/sdk-trace-node");
   const { logs } = await import("@opentelemetry/api-logs");
   const { metrics, trace } = await import("@opentelemetry/api");
 
-  const resource = resourceFromAttributes({
-    [ATTR_SERVICE_NAME]: serviceName,
-    [ATTR_SERVICE_VERSION]: process.env.OTEL_SERVICE_VERSION || "1.0.0",
-    [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: deploymentEnv,
+  const resource = new Resource({
+    [SEMRESATTRS_SERVICE_NAME]: serviceName,
+    [SEMRESATTRS_SERVICE_VERSION]:
+      process.env.OTEL_SERVICE_VERSION || "1.0.0",
+    [SEMRESATTRS_DEPLOYMENT_ENVIRONMENT]: deploymentEnv,
     "elastic.cloud.deployment": "otel-demo-a5630c",
   });
 
@@ -70,7 +72,7 @@ export async function register() {
     headers: authHeaders,
   });
 
-  const meterProvider = new (await import("@opentelemetry/sdk-metrics")).MeterProvider({
+  const meterProvider = new MeterProvider({
     resource,
     readers: [
       new PeriodicExportingMetricReader({
@@ -99,28 +101,9 @@ export async function register() {
 
   sdk.start();
 
-  const tracer = trace.getTracer(serviceName);
-  tracer.startSpan("vercel.startup").end();
+  trace.getTracer(serviceName).startSpan("vercel.startup").end();
   logs.getLogger(serviceName).emit({
     severityText: "INFO",
     body: `[${serviceName}] OTel started on Vercel (${deploymentEnv})`,
   });
-}
-
-function parseAuthHeaders(): Record<string, string> {
-  const raw = process.env.OTEL_EXPORTER_OTLP_HEADERS?.trim();
-  if (raw) {
-    const out: Record<string, string> = {};
-    for (const part of raw.split(",")) {
-      const eq = part.indexOf("=");
-      if (eq <= 0) continue;
-      out[part.slice(0, eq).trim()] = decodeURIComponent(
-        part.slice(eq + 1).trim(),
-      );
-    }
-    if (out.Authorization) return out;
-  }
-  const key = process.env.OTEL_API_KEY?.trim();
-  if (key) return { Authorization: `ApiKey ${key}` };
-  return {};
 }
